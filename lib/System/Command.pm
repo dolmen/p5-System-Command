@@ -12,6 +12,10 @@ use List::Util qw( reduce );
 
 use System::Command::Reaper;
 
+# MSWin32 support
+use constant MSWin32 => $^O eq 'MSWin32';
+require IPC::Run if MSWin32;
+
 our $VERSION = '1.00';
 
 # a few simple accessors
@@ -23,6 +27,9 @@ for my $attr (qw( cmdline )) {
     no strict 'refs';
     *$attr = sub { return @{ $_[0]{$attr} } };
 }
+
+# handles counter
+my $seq = 1;
 
 sub new {
     my ( $class, @cmd ) = @_;
@@ -56,11 +63,9 @@ sub new {
         if exists $o->{env};
 
     # start the command
-    my ( $in, $out, $err );
-    $err = Symbol::gensym;
-    my $pid = eval { open3( $in, $out, $err, @cmd ); };
+    my ( $pid, $in, $out, $err ) = _spawn(@cmd);
 
-    # FIXME - better check open3 error conditions
+    # FIXME - better check error conditions
     croak $@ if !defined $pid;
 
     # some input was provided
@@ -78,12 +83,13 @@ sub new {
 
     # create the object
     my $self = bless {
-        cmdline => [ @cmd ],
+        cmdline => [@cmd],
         options => $o,
-        pid     => $pid,
+        pid     => MSWin32 ? $pid->{KIDS}[0]{PID} : $pid,
         stdin   => $in,
         stdout  => $out,
         stderr  => $err,
+        MSWin32 ? ( _ipc_run => $pid ) : (),
     }, $class;
 
     # create the subprocess reaper and link the handles and command to it
@@ -96,6 +102,35 @@ sub new {
 
 # delegate close() to the reaper
 sub close { $_[0]{reaper}->reap() }
+
+sub _spawn {
+    my @cmd = @_;
+    my ( $pid, $in, $out, $err );
+
+    # setup filehandles
+    {
+        no strict 'refs';
+        $in  = \do { local *{"IN$seq"} };
+        $out = \do { local *{"OUT$seq"} };
+        $err = \do { local *{"ERR$seq"} };
+        $seq++;
+    }
+
+    # start the command
+    if (MSWin32) {
+        $pid = IPC::Run::start(
+            [@cmd],
+            '<pipe'  => $in,
+            '>pipe'  => $out,
+            '2>pipe' => $err,
+        );
+    }
+    else {
+        $pid = eval { open3( $in, $out, $err, @cmd ); };
+    }
+
+    return ($pid, $in, $out, $err);
+}
 
 1;
 
