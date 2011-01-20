@@ -8,7 +8,9 @@ use Carp;
 use Scalar::Util qw( weaken );
 
 use constant MSWin32 => $^O eq 'MSWin32';
-use constant HANDLES => qw( stdin stdout stderr );
+use constant HANDLES => MSWin32
+    ? qw( stdin stdout stderr _ipc_run )
+    : qw( stdin stdout stderr );
 use constant STATUS  => qw( exit signal core );
 
 our $VERSION = '1.00';
@@ -34,7 +36,7 @@ sub reap {
     $err and $err->opened and $err->close || carp "error closing stderr: $!";
 
     # and wait for the child
-    if (MSWin32) {
+    if (MSWin32 && defined $self->{_ipc_run} ) {
         $self->{_ipc_run}->finish;
     }
     else {
