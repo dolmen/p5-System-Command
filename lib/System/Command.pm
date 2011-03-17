@@ -13,6 +13,9 @@ use List::Util qw( reduce );
 use POSIX ":sys_wait_h";
 use constant STATUS  => qw( exit signal core );
 
+# MSWin32 support
+use constant MSWin32 => $^O eq 'MSWin32';
+
 our $VERSION = '1.03';
 
 # Trap the real STDIN/ERR/OUT file handles in case someone
